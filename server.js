@@ -1,7 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
-const { google } = require('googleapis');
 const { GoogleGenerativeAI } = require('@google/generative-ai'); 
 require('dotenv').config();
 
@@ -10,16 +9,6 @@ app.use(bodyParser.json());
 
 // API Setup
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-// 👇 Service Account JSON နည်းလမ်းအသစ်ဖြင့် Sheets auth ပြုလုပ်ခြင်း
-const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-const auth = new google.auth.JWT(
-    serviceAccount.client_email,
-    null,
-    serviceAccount.private_key,
-    ['https://www.googleapis.com/auth/spreadsheets.readonly']
-);
-const sheets = google.sheets({ version: 'v4', auth });
 
 // ၁။ Facebook Webhook စစ်ဆေးခြင်း
 app.get('/webhook', (req, res) => {
@@ -64,16 +53,16 @@ async function handleMessage(senderId, incomingMessage) {
     let userMessage = incomingMessage.text || "";
 
     if (incomingMessage.attachments && incomingMessage.attachments[0].type === 'image') {
-        const imageUrl = incomingMessage.attachments[0].payload.url;
-        await sendToTelegram(process.env.TELEGRAM_FINANCE_CHAT_ID, `💰 ငွေလွှဲပုံ ရောက်လာပါပြီ။\nCustomer ID: ${senderId}\nURL: ${imageUrl}`);
         await sendFacebookMessage(senderId, "ငွေလွှဲ Screenshot ကို လက်ခံရရှိပါပြီဗျာ။ စာရင်းကိုင်အဖွဲ့က စစ်ဆေးနေပါသဖြင့် ခေတ္တစောင့်ဆိုင်းပေးပါရန်။");
         return;
     }
 
     if (userMessage) {
         try {
-            // Google Sheet ထဲမှ Products Tab ကို ဖတ်ခြင်း
-            const products = await getSheetData('Products!A:D');
+            // Google Sheet ထဲမှ Products Tab ကို API Key ဖြင့် တိုက်ရိုက်ဖတ်ခြင်း
+            const sheetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${process.env.SPREADSHEET_ID}/values/Products!A:D?key=${process.env.GOOGLE_API_KEY}`;
+            const response = await axios.get(sheetUrl);
+            const products = response.data.values;
             
             const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
             const prompt = `မင်းက မြန်မာအွန်လိုင်းရှော့ပင်းက လူသား Admin တစ်ယောက်ပါ။ ဒီပစ္စည်းစာရင်းအတိုင်းပဲ ယဉ်ကျေးပျူငှာစွာ ဖြေပေးပါ: ${JSON.stringify(products)}။ Customer ရဲ့ မေးခွန်းက: ${userMessage}`;
@@ -83,31 +72,16 @@ async function handleMessage(senderId, incomingMessage) {
 
             await sendFacebookMessage(senderId, aiResponse);
         } catch (error) {
-            console.error("AI or Sheet Error:", error);
+            console.error("AI or Sheet Error:", error?.response?.data || error.message);
             await sendFacebookMessage(senderId, "ခေတ္တ စနစ်ချို့ယွင်းနေပါသဖြင့် ခဏနေမှ ပြန်မေးပေးပါခင်ဗျာ။");
         }
     }
 }
 
-// ၄။ Telegram သို့ စာပို့ခြင်း
-async function sendToTelegram(chatId, text) {
-    const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`;
-    await axios.post(telegramUrl, { chat_id: chatId, text: text });
-}
-
-// ၅။ Facebook Messenger သို့ စာပြန်ပို့ခြင်း
+// ၄။ Facebook Messenger သို့ စာပြန်ပို့ခြင်း
 async function sendFacebookMessage(senderId, text) {
     const fbUrl = `https://graph.facebook.com/v19.0/me/messages?access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`;
     await axios.post(fbUrl, { recipient: { id: senderId }, message: { text: text } });
-}
-
-// ၆။ Google Sheet ဖတ်ခြင်း (Service Account သုံးထားပါသည်)
-async function getSheetData(range) {
-    const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.SPREADSHEET_ID,
-        range: range,
-    });
-    return res.data.values;
 }
 
 app.listen(3000, () => console.log('🚀 Server is running on port 3000'));
