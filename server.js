@@ -16,7 +16,7 @@ const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
 const auth = new google.auth.JWT(
     serviceAccount.client_email,
     null,
-    serviceAccount.private_key,
+    serviceAccount.private_key.replace(/\\n/g, '\n'), //
     ['https://www.googleapis.com/auth/spreadsheets.readonly']
 );
 const sheets = google.sheets({ version: 'v4', auth });
