@@ -10,16 +10,24 @@ app.use(bodyParser.json());
 
 // API Setup
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const sheets = google.sheets({ version: 'v4', auth: process.env.GOOGLE_API_KEY });
 
-// ၁။ Facebook Webhook စစ်ဆေးခြင်း (Meta Verification Endpoint)
+// 👇 Service Account JSON နည်းလမ်းအသစ်ဖြင့် Sheets auth ပြုလုပ်ခြင်း
+const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+const auth = new google.auth.JWT(
+    serviceAccount.client_email,
+    null,
+    serviceAccount.private_key,
+    ['https://www.googleapis.com/auth/spreadsheets.readonly']
+);
+const sheets = google.sheets({ version: 'v4', auth });
+
+// ၁။ Facebook Webhook စစ်ဆေးခြင်း
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
     if (mode && token) {
-        // Meta Developer Console တွင် 'myshopbot' ဟု ရိုက်ထည့်ရမည်
         if (mode === 'subscribe' && token === 'myshopbot') {
             console.log('WEBHOOK_VERIFIED');
             return res.status(200).send(challenge);
@@ -27,10 +35,10 @@ app.get('/webhook', (req, res) => {
             return res.sendStatus(403);
         }
     }
-    return res.status(200).send('Cannot GET /webhook - Server is running!');
+    return res.status(200).send('Server is running!');
 });
 
-// ၂။ Messenger မှ စာ သို့မဟုတ် ပုံ ဝင်လာလျှင် လက်ခံမည့်နေရာ (POST)
+// ၂။ Messenger မှ စာ ဝင်လာလျှင် လက်ခံမည့်နေရာ
 app.post('/webhook', async (req, res) => {
     const body = req.body;
 
@@ -51,22 +59,20 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// ၃။ Message များကို စီမံခန့်ခွဲမည့် Logic
+// ၃။ Message စီမံခန့်ခွဲမည့် Logic
 async function handleMessage(senderId, incomingMessage) {
     let userMessage = incomingMessage.text || "";
 
-    // Customer က ပုံပို့လာလျှင် (ငွေလွှဲ Screenshot စစ်ရန် Telegram သို့ ပို့ခြင်း)
     if (incomingMessage.attachments && incomingMessage.attachments[0].type === 'image') {
         const imageUrl = incomingMessage.attachments[0].payload.url;
-        await sendToTelegram(process.env.TELEGRAM_FINANCE_CHAT_ID, `💰 ငွေလွှဲပုံ ရောက်လာပါပြီ။ စစ်ပေးပါ။\nCustomer ID: ${senderId}\nURL: ${imageUrl}`);
+        await sendToTelegram(process.env.TELEGRAM_FINANCE_CHAT_ID, `💰 ငွေလွှဲပုံ ရောက်လာပါပြီ။\nCustomer ID: ${senderId}\nURL: ${imageUrl}`);
         await sendFacebookMessage(senderId, "ငွေလွှဲ Screenshot ကို လက်ခံရရှိပါပြီဗျာ။ စာရင်းကိုင်အဖွဲ့က စစ်ဆေးနေပါသဖြင့် ခေတ္တစောင့်ဆိုင်းပေးပါရန်။");
         return;
     }
 
-    // Customer က စာဖြင့် မေးမြန်းလာလျှင် (Google Sheet ထဲမှ Products Tab ကို ဖတ်မည်)
     if (userMessage) {
         try {
-            // သင့် Sheet ထဲက Products Tab ထဲမှ Column A မှ D (Product Code, Name, Price, Stock) ကို ဖတ်ခြင်း
+            // Google Sheet ထဲမှ Products Tab ကို ဖတ်ခြင်း
             const products = await getSheetData('Products!A:D');
             
             const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
@@ -95,7 +101,7 @@ async function sendFacebookMessage(senderId, text) {
     await axios.post(fbUrl, { recipient: { id: senderId }, message: { text: text } });
 }
 
-// ၆။ Google Sheet ဖတ်ခြင်း
+// ၆။ Google Sheet ဖတ်ခြင်း (Service Account သုံးထားပါသည်)
 async function getSheetData(range) {
     const res = await sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
@@ -104,5 +110,4 @@ async function getSheetData(range) {
     return res.data.values;
 }
 
-// Webhook Server အား Port 3000 တွင် ဖွင့်လှစ်ခြင်း
 app.listen(3000, () => console.log('🚀 Server is running on port 3000'));
