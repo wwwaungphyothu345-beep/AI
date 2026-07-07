@@ -37,8 +37,7 @@ app.post('/webhook', async (req, res) => {
                 const senderId = webhookEvent.sender.id;
 
                 if (webhookEvent.message) {
-                    // 🌟 ဒါက စာဝင်လာရင် Render Log မှာ ချက်ချင်းပေါ်မယ့် စာသားပါ
-                    console.log(`📩 Customer ဆီက စာဝင်လာပါပြီ: "${webhookEvent.message.text}"`);
+                    console.log(`📩 Message Received: "${webhookEvent.message.text}"`);
                     await handleMessage(senderId, webhookEvent.message);
                 }
             }
@@ -60,11 +59,11 @@ async function handleMessage(senderId, incomingMessage) {
 
     if (userMessage) {
         try {
-            console.log("📊 Google Sheet ထဲက ဒေတာတွေကို စဖတ်နေပါပြီ...");
-            const sheetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${process.env.SPREADSHEET_ID}/values/Products!A:D?key=${process.env.GOOGLE_API_KEY}`;
-            const response = await axios.get(sheetUrl);
-            const products = response.data.values;
-            console.log("✅ Sheet ဖတ်တာ အောင်မြင်ပါတယ်၊ AI ဆီ ပို့နေပါပြီ...");
+            console.log("📊 Google Sheet Web App ထံမှ ဒေတာ ဖတ်ယူနေပါပြီ...");
+            // 🌟 Render Env ထဲက GOOGLE_SHEET_WEBAPP_URL ကို လှမ်းခေါ်ခြင်း
+            const response = await axios.get(process.env.GOOGLE_SHEET_WEBAPP_URL);
+            const products = response.data;
+            console.log("✅ Sheet Data ရရှိပါပြီ၊ AI ဆီ ပို့နေပါပြီ...");
             
             const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
             const prompt = `မင်းက မြန်မာအွန်လိုင်းရှော့ပင်းက လူသား Admin တစ်ယောက်ပါ။ ဒီပစ္စည်းစာရင်းအတိုင်းပဲ ယဉ်ကျေးပျူငှာစွာ ဖြေပေးပါ: ${JSON.stringify(products)}။ Customer ရဲ့ မေးခွန်းက: ${userMessage}`;
@@ -72,11 +71,10 @@ async function handleMessage(senderId, incomingMessage) {
             const result = await model.generateContent(prompt);
             const aiResponse = result.response.text();
 
-            console.log("🤖 AI က အဖြေထုတ်ပေးလိုက်ပါပြီ၊ Messenger ကို လှမ်းပို့နေပါတယ်...");
             await sendFacebookMessage(senderId, aiResponse);
-            console.log("🚀 Messenger ဆီ စာသား ပို့ဆောင်မှု အောင်မြင်သွားပါပြီ!");
+            console.log("🚀 Messenger ဆီ စာပြန်လိုက်ပါပြီ!");
         } catch (error) {
-            console.error("❌ ERROR တက်သွားတဲ့နေရာ:", error?.response?.data || error.message);
+            console.error("❌ Error:", error.message);
             await sendFacebookMessage(senderId, "ခေတ္တ စနစ်ချို့ယွင်းနေပါသဖြင့် ခဏနေမှ ပြန်မေးပေးပါခင်ဗျာ။");
         }
     }
